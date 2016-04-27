@@ -4,7 +4,6 @@
 %% @doc A way to interact with modbus devices on an ethernet network
 
 -module(modbus).
--import(crc16).
 
 -include("modbus.hrl").
 
@@ -12,9 +11,11 @@
 
 -export([send_request_message/2,checksum/1,check_checksum/1,generate_request_message/1,get_response_header/2,get_response_data/2]).
 
+-define(TIMEOUT, 3000).
+
 send_request_message(State,Request) ->
 	Message =  generate_request_message(Request),
-	%io:format("~w~n",[Message]),
+	io:format("~w~n",[Message]),
 	gen_tcp:send(State#modbus_state.sock,Message).
 
 generate_request_message(Request) when is_record(Request, tcp_request) ->
@@ -58,17 +59,17 @@ generate_request_message(Request) when is_record(Request, rtu_request) ->
 get_response_header(State,OriginalRequest) when is_record(OriginalRequest, tcp_request) ->
 	TID = State#modbus_state.tid,
 	_DeviceAddress = State#modbus_state.device_address,
-	{ok, [0, TID, 0, 0, 0, _TcpSize]} = gen_tcp:recv(State#modbus_state.sock,6,1000),
+	{ok, [0, TID, 0, 0, 0, _TcpSize]} = gen_tcp:recv(State#modbus_state.sock,6,?TIMEOUT),
 
 	get_response_header(State,OriginalRequest#tcp_request.rtu_request);
 
 get_response_header(State, OriginalRequest) when is_record(OriginalRequest, rtu_request) ->
 
 	% Get RTU header (also encapsulated within TCP)
-	{ok, [Address, Code]} = gen_tcp:recv(State#modbus_state.sock,2,1000),
+	{ok, [Address, Code]} = gen_tcp:recv(State#modbus_state.sock,2,?TIMEOUT),
 
-	% io:format("RH A: ~w~n",[Address]),
-	% io:format("RH C: ~w~n",[Code]),
+	io:format("RH A: ~w~n",[Address]),
+	io:format("RH C: ~w~n",[Code]),
 
 	% validate the RTU header->
 	OrigAddress = OriginalRequest#rtu_request.address,	
@@ -78,7 +79,7 @@ get_response_header(State, OriginalRequest) when is_record(OriginalRequest, rtu_
  	case {Address,Code} of
 		{OrigAddress,OrigCode} -> ok;
 		{OrigAddress,BadCode} -> 
-			{ok, [ErrorCode]} = gen_tcp:recv(State#modbus_state.sock,1,1000),
+			{ok, [ErrorCode]} = gen_tcp:recv(State#modbus_state.sock,1,?TIMEOUT),
 
 			case ErrorCode of
 				1 -> {error, illegal_function};
@@ -90,7 +91,7 @@ get_response_header(State, OriginalRequest) when is_record(OriginalRequest, rtu_
 				_ -> {error, unknown_response_code}
 			end;
 			
-		{_,_} -> {error,junkResponse}
+		{_,_}=Junk -> io:format("Junk: ~w~n", [Junk]), {error,junkResponse}
   	end.
 
 get_response_data(State,OriginalRequest) when is_record(OriginalRequest, tcp_request) ->
@@ -103,19 +104,19 @@ get_response_data(State, OriginalRequest) when is_record(OriginalRequest, rtu_re
 			Size = 4,
 			ResponseChecksum = [OriginalRequest#rtu_request.address, OriginalRequest#rtu_request.function_code];
 		_ ->
-			{ok, [Size]} = gen_tcp:recv(State#modbus_state.sock, 1, 1000),
+			{ok, [Size]} = gen_tcp:recv(State#modbus_state.sock, 1, ?TIMEOUT),
 			ResponseChecksum = [OriginalRequest#rtu_request.address, OriginalRequest#rtu_request.function_code, Size]
 	end,
 
-	%io:format("Size: ~w~n",[Size]),
-	{ok, Data} = gen_tcp:recv(State#modbus_state.sock, Size, 1000),
-	%io:format("Data: ~w~n",[Data]),
+	io:format("Size: ~w~n",[Size]),
+	{ok, Data} = gen_tcp:recv(State#modbus_state.sock, Size, ?TIMEOUT),
+	io:format("Data: ~w~n",[Data]),
 
 	% Get and validate the rtu checksum
 	case State#modbus_state.type of
 		rtu ->
-			{ok, Checksum} = gen_tcp:recv(State#modbus_state.sock, 2, 1000),
-			% io:format("~w~n",[Checksum]),
+			{ok, Checksum} = gen_tcp:recv(State#modbus_state.sock, 2, ?TIMEOUT),
+			io:format("~w~n",[Checksum]),
 
 			{ok,_} = check_checksum(ResponseChecksum ++ Data ++ Checksum);
 		
@@ -128,6 +129,18 @@ get_response_data(State, OriginalRequest) when is_record(OriginalRequest, rtu_re
 
 list_word16_to_binary(Values) when is_list(Values) ->
 	concat_binary([<<X:16>> || X <- Values]).
+
+concat_binary([]) ->
+    <<>>;
+concat_binary([Part]) ->
+    Part;
+concat_binary(List) ->
+    lists:foldr(fun (A, B) ->
+			if
+			    bit_size(B) > 0 -> <<A/binary, B/binary>>;
+			    true            -> A
+			end
+		end, <<>>, List).
 
 checksum(Data) when is_binary(Data)->
 	list_to_binary(checksum(binary_to_list(Data)));
