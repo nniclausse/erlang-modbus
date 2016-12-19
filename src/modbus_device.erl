@@ -121,21 +121,26 @@ read_memory(Pid, List) ->
 		NewRegAcc = RegAcc + OffsetAcc,
 		case Elem of
 			{NewRegAcc, "%MD0." ++ _ = MemPosition} ->
-				[{RegAcc, OffsetAcc +32, MemAcc ++ [MemPosition]} | Acc];
+				[{RegAcc, OffsetAcc +32, [MemPosition |MemAcc]} | Acc];
 			{NewRegAcc, "%MW0." ++ _ = MemPosition} ->
-				[{RegAcc, OffsetAcc +16, MemAcc ++ [MemPosition]} | Acc];
+				[{RegAcc, OffsetAcc +16, [MemPosition |MemAcc]} | Acc];
 			{NewRegAcc, "%MB0." ++ _ = MemPosition} ->
-				[{RegAcc, OffsetAcc +8, MemAcc ++ [MemPosition]} | Acc];
-			{NewRegAcc, MemPosition} ->
-				[{RegAcc, OffsetAcc +1, MemAcc ++ [MemPosition]} | Acc];
+				[{RegAcc, OffsetAcc +8, [MemPosition |MemAcc]} | Acc];
+			{NewRegAcc, "%MX0." ++ _ = MemPosition} ->
+				case MemAcc of
+					[["%MX0." ++_ | _] = MxAcc |MemAccTail] when length(MxAcc) < 8 ->
+						[{RegAcc, OffsetAcc +1, [[MemPosition |MxAcc] |MemAccTail]} | Acc];
+					_ ->
+						[{RegAcc, OffsetAcc +1, [[MemPosition] |MemAcc]} | Acc]
+				end;
 			{Reg, "%MD0." ++ _ = MemPosition} ->
 				[{Reg, 32, [MemPosition]}, {RegAcc, OffsetAcc, MemAcc} | Acc];
 			{Reg, "%MW0." ++ _ = MemPosition} ->
 				[{Reg, 16, [MemPosition]}, {RegAcc, OffsetAcc, MemAcc} | Acc];
 			{Reg, "%MB0." ++ _ = MemPosition} ->
 				[{Reg, 8, [MemPosition]}, {RegAcc, OffsetAcc, MemAcc} | Acc];
-			{Reg, MemPosition} ->
-				[{Reg, 1, [MemPosition]}, {RegAcc, OffsetAcc, MemAcc} | Acc]
+			{Reg, "%MX0." ++ _ = MemPosition} ->
+				[{Reg, 1, [[MemPosition]]}, {RegAcc, OffsetAcc, MemAcc} | Acc]
 		end
 	end, [{0, 0, []}], lists:usort(NewList)),
 
@@ -150,32 +155,27 @@ read_memory(Pid, List) ->
 					case Mem of
 						"%MD0." ++ _ ->
 							<<Result:32/float, DataTail/binary>> = DataAcc,
-							{MemAcc ++ [{Mem, Result}], DataTail};
+							{[{Mem, Result} |MemAcc], DataTail};
 						"%MW0." ++ _ ->
 							<<Result:16/integer, DataTail/binary>> = DataAcc,
-							{MemAcc ++ [{Mem, Result}], DataTail};
+							{[{Mem, Result} |MemAcc], DataTail};
 						"%MB0." ++ _ ->
 							<<Result:8/integer, DataTail/binary>> = DataAcc,
-							{MemAcc ++ [{Mem, Result}], DataTail};
-						"%MX0." ++ _ ->
-							case DataAcc of
-								<<>> ->
-									Result = 0,
-									DataTail = <<>>;
-							 	_ ->
-									<<Result:8, DataTail/binary>> = DataAcc
-							end,
-							[FinalResult |ResultTail] = erlang:integer_to_list(Result, 2),
-							FinalDataTail = case ResultTail of
-								[] ->
-									DataTail;
-								_ ->
-									NewResultTail = erlang:list_to_integer(ResultTail, 2),
-									<<NewResultTail:8, DataTail/binary>>
-							end,
-							{MemAcc ++ [{Mem, erlang:list_to_integer([FinalResult])}], FinalDataTail}
+							{[{Mem, Result} |MemAcc], DataTail};
+						["%MX0." ++ _ |_] = MxList ->
+							<<Result:8/integer, DataTail/binary>> = DataAcc,
+							MxResultList = lists:reverse(erlang:integer_to_list(Result, 2)),
+							{FinalMxList, _} = lists:foldl( fun(MxElem, {MxAcc, MxResultAcc}) ->
+								case MxResultAcc of
+									[MxH | MxT] ->
+										{[{MxElem, erlang:list_to_integer([MxH])} |MxAcc], MxT};
+									[] ->
+										{[{MxElem, 0} |MxAcc], []}
+								end
+							end, {[], MxResultList}, lists:reverse(MxList)),
+							{MemAcc ++ FinalMxList, DataTail}
 					end
-				end, {Acc, BinaryData}, MemList),
+				end, {Acc, BinaryData}, lists:reverse(MemList)),
 				ResultList
 		end
 	end, [], ReqList).
@@ -317,8 +317,8 @@ send_and_receive(State) ->
 bytes_to_bits(Bytes) when is_integer(Bytes) ->
 	Bits = erlang:integer_to_list(Bytes, 2),
 	List = lists:foldl( fun(Elem, Acc) ->
-						 Acc ++ [erlang:list_to_integer([Elem])]
-				 end, [], Bits),
+		[erlang:list_to_integer([Elem]) |Acc]
+	end, [], Bits),
 	List ++ lists:duplicate(8 - length(List), 0);
 
 bytes_to_bits(Bytes) ->
