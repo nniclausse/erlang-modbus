@@ -75,6 +75,8 @@ get_response_header(State) ->
 get_response_data(State) ->
 
 	case State#tcp_request.function of
+		?FC_WRITE_HREG ->
+			Size = 4;
 		?FC_WRITE_HREGS -> 
 			Size = 4;
 		_ ->

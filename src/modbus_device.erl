@@ -16,7 +16,8 @@
 	read_hreg/3,
 	read_memory/2,
 	read_memory/3,
-	write_hreg/3
+	write_hreg/3,
+	write_hregs/3
 ]).
 
 %% Internal API (gen_server)
@@ -63,11 +64,15 @@ read_hreg(Pid, Start, Offset) ->
 read_ireg(Pid, Start, Offset) ->
 	gen_server:call(Pid, {read_ireg, Start, Offset}).
 
-%% @doc Function to write data on holding registers from the modbus device.
+%% @doc Function to write data on holding register from the modbus device.
 %% @end
 -spec write_hreg(Pid::pid(), Start::integer(), Value::integer()) -> term().
 write_hreg(Pid, Start, Value) ->
 	gen_server:call(Pid, {write_hreg, Start, Value }).
+
+-spec write_hregs(Pid::pid(), Start::integer(), Values::[integer()]) -> term().
+write_hregs(Pid, Start, Values) ->
+	gen_server:call(Pid, {write_hregs, Start, Values}).
 
 %% @doc Function to request a memory position from the modbus device.
 %% @end
@@ -265,10 +270,17 @@ handle_call({read_raw, Start, Offset}, _From, State) ->
 
 	{reply, Data, NewState};
 
-handle_call({write_hreg, Start, OrigData}, From, State) when is_integer(OrigData) ->
-	handle_call({write_hreg, Start, [OrigData]}, From, State);
+handle_call({write_hreg, Start, OrigData}, _From, State) when is_integer(OrigData) ->
+	NewState = State#tcp_request{
+		tid = State#tcp_request.tid +1,
+		function = ?FC_WRITE_HREG,
+		start = Start,
+		data = OrigData
+	},
+	{ok, Data} = send_and_receive(NewState),
+	{reply, bytes_to_words(Data), NewState};
 
-handle_call({write_hreg, Start, OrigData}, _From, State) ->
+handle_call({write_hregs, Start, OrigData}, _From, State) ->
 	NewState = State#tcp_request{
 		tid = State#tcp_request.tid +1,
 		function = ?FC_WRITE_HREGS,
