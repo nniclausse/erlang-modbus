@@ -1,3 +1,4 @@
+%%% -*- erlang-indent-level: 8;indent-tabs-mode: nil -*-
 %% @author Caleb Tennis <caleb.tennis@gmail.com>
 %% @copyright 2010 Data Cave, Inc.  www.thedatacave.com
 %% @version 0.9
@@ -28,6 +29,18 @@ generate_request_message(#tcp_request{tid = Tid, address = Address, function = ?
 	ByteCount = length(binary_to_list(ValuesBin)),
 	Message = <<Address:8, ?FC_WRITE_HREGS:8, Start:16, Quantity:16, ByteCount:8, ValuesBin/binary>>,
 
+	Size = size(Message),
+	<<Tid:16, 0, 0, Size:16, Message/binary>>;
+
+generate_request_message(#tcp_request{tid = Tid, address = Address, function = ?FC_WRITE_COIL,
+                                      start = Start, data = 0}) ->
+	Message = <<Address:8, ?FC_WRITE_COIL:8, Start:16, 0:16>>,
+	Size = size(Message),
+	<<Tid:16, 0, 0, Size:16, Message/binary>>;
+
+generate_request_message(#tcp_request{tid = Tid, address = Address, function = ?FC_WRITE_COIL,
+                                      start = Start, data = _Data}) ->
+	Message = <<Address:8, ?FC_WRITE_COIL:8, Start:16, 16#ff00:16>>,
 	Size = size(Message),
 	<<Tid:16, 0, 0, Size:16, Message/binary>>;
 
@@ -79,6 +92,8 @@ get_response_data(State) ->
 			Size = 4;
 		?FC_WRITE_HREGS -> 
 			Size = 4;
+                ?FC_WRITE_COIL ->
+                        Size = 4;
 		_ ->
 			{ok, [Size]} = gen_tcp:recv(State#tcp_request.sock, 1)
 	end,

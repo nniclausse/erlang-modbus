@@ -1,3 +1,4 @@
+%%% -*- erlang-indent-level: 8;indent-tabs-mode: nil -*-
 %% @author Caleb Tennis <caleb.tennis@gmail.com>
 %% @copyright 2010 Data Cave, Inc.  www.thedatacave.com
 %% @version 0.9
@@ -16,6 +17,7 @@
 	read_hreg/3,
 	read_memory/2,
 	read_memory/3,
+        write_coil/3,
 	write_hreg/3,
 	write_hregs/3
 ]).
@@ -63,6 +65,10 @@ read_hreg(Pid, Start, Offset) ->
 -spec read_ireg(Pid::pid(), Start::integer(), Offset::integer()) -> integer() | [integer()].
 read_ireg(Pid, Start, Offset) ->
 	gen_server:call(Pid, {read_ireg, Start, Offset}).
+
+-spec write_coil(Pid::pid(), Start::integer(), Value::integer()) -> term().
+write_coil(Pid, Start, Value) ->
+        gen_server:call(Pid, {write_coil, Start, Value}).
 
 %% @doc Function to write data on holding register from the modbus device.
 %% @end
@@ -268,6 +274,15 @@ handle_call({read_raw, Start, Offset}, _From, State) ->
 	},
 	{ok, Data} = send_and_receive(NewState),
 
+	{reply, Data, NewState};
+
+handle_call({write_coil, Start, Value}, _From, State) ->
+        NewState = State#tcp_request{
+                     tid = State#tcp_request.tid +1,
+                     function = ?FC_WRITE_COIL,
+                     start = Start, data = Value
+                    },
+        {ok, Data} = send_and_receive(NewState),
 	{reply, Data, NewState};
 
 handle_call({write_hreg, Start, OrigData}, _From, State) when is_integer(OrigData) ->
