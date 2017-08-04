@@ -11,4 +11,4 @@ ebin
 log
 logs
 erl_crash.dump
-
+.rebar3/
