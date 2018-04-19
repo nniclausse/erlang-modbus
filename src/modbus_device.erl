@@ -303,9 +303,9 @@ handle_call({write_hregs, Start, OrigData}, _From, State) ->
 		data = OrigData
 	},
 
-	{ok, [_Address,_FunctionCode|Data]} = send_and_receive(NewState),
+	{ok, Data} = send_and_receive(NewState),
 
-	[FinalData] = bytes_to_words(Data),
+	FinalData = bytes_to_words(Data),
 
 	{reply, FinalData, NewState}.
 
