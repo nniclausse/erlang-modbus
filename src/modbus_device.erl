@@ -7,6 +7,8 @@
 -module(modbus_device).
 -author('Caleb Tennis <caleb.tennis@gmail.com>').
 
+-compile([{parse_transform, lager_transform}]).
+
 %% Public API
 -export([
 	connect/3,
@@ -333,20 +335,26 @@ code_change(_OldVsn, State, _Extra) ->
 %%% %%% -------------------------------------------------------------------
 
 send_and_receive_with_retry(State, 0) ->
-    {error, too_many_retries, State};
-send_and_receive_with_retry(State=#tcp_request{address=DeviceAddr, host=Host, port=Port}, Retry) ->
+        lager:error("No more retry for tcp, abort"),
+        {error, too_many_retries, State};
+send_and_receive_with_retry(State=#tcp_request{address=DeviceAddr, host=Host, port=Port, function=Fun, data=Data, start=Start}, Retry) ->
+    lager:info("Try to send ~p",[State]),
     try send_and_receive(State) of
-        {ok, Data } -> {ok, Data, State}
+            {ok, NewData } ->
+                    lager:info("Sent ok"),
+                    {ok, NewData, State}
     catch
             error:{badmatch, {error, closed}} ->
+                    lager:warning("error, closed connection, try to reconnect ~p",[State]),
                     {ok, NewState} = init([Host, Port, DeviceAddr]),
-                    send_and_receive_with_retry(NewState, Retry-1);
+                    lager:notice("Reconnected ~p",[NewState]),
+                    send_and_receive_with_retry(NewState#tcp_request{tid=1,data=Data,start=Start,function=Fun}, Retry-1);
             Error:Reason ->
                     {Error,Reason,State}
     end.
 
 send_and_receive(State) ->
-
+    lager:info("send and receive! ~p",[State]),
 	ok = modbus:send_request_message(State),
 	ok = modbus:get_response_header(State),
 	{ok, _Data} = modbus:get_response_data(State).
