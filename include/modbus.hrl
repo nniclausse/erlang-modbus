@@ -7,4 +7,4 @@
 -define(FC_WRITE_COILS,   16#0f).
 -define(FC_WRITE_HREGS,   16#10).
 
--record(tcp_request, {sock, tid = 1, address = 1, function, start, data }).
+-record(tcp_request, {sock, tid = 1, address = 1, function, start, data, host, port }).
