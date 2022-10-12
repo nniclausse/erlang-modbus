@@ -338,12 +338,10 @@ send_and_receive_with_retry(State=#tcp_request{address=DeviceAddr, host=Host, po
     try send_and_receive(State) of
         {ok, Data } -> {ok, Data, State}
     catch
-            badmatch:{error, closed} ->
-                    io:format("Closed connection, try to reconnect: ~p:~p~n", [Host,Port]),
+            error:{badmatch, {error, closed}} ->
                     {ok, NewState} = init([Host, Port, DeviceAddr]),
                     send_and_receive_with_retry(NewState, Retry-1);
             Error:Reason ->
-                    io:format("Unknown error ~p:~p ~n", [Error, Reason]),
                     {Error,Reason,State}
     end.
 
